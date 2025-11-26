@@ -8,6 +8,19 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
+// ... existing imports ...
+// ... existing app.use middleware ...
+
+app.use(express.static(path.join(__dirname, 'public')));
+
+/* --- ADD THIS SECTION --- */
+app.get('/', (req, res) => {
+  res.send('<h1>Server is Running!</h1><p>API is ready to use.</p>');
+});
+/* ------------------------ */
+
+// health
+app.get('/api/ping', ...
 // health
 app.get('/api/ping', (req, res) => res.json({pong: true}));
 
