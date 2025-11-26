@@ -8,19 +8,13 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ... existing imports ...
-// ... existing app.use middleware ...
-
-app.use(express.static(path.join(__dirname, 'public')));
-
-/* --- ADD THIS SECTION --- */
+/* -------------------------------------------------------
+   NEW: Root Route to fix "Cannot GET /"
+   ------------------------------------------------------- */
 app.get('/', (req, res) => {
-  res.send('<h1>Server is Running!</h1><p>API is ready to use.</p>');
+  res.send('<div style="font-family: sans-serif; text-align: center; padding: 50px;"><h1>Server is Running!</h1><p>The PTMS API is live and ready.</p></div>');
 });
-/* ------------------------ */
 
-// health
-app.get('/api/ping', ...
 // health
 app.get('/api/ping', (req, res) => res.json({pong: true}));
 
@@ -151,9 +145,6 @@ app.post('/api/session/:id/reschedule', async (req,res)=>{
   }catch(e){ console.error(e); res.status(500).json({error:'Server error'}); }
 });
 
-/* ---------------------------
-   NEW: mark completed endpoint
-   --------------------------- */
 // Tutor marks session completed
 app.post('/api/session/:id/complete', async (req, res) => {
   try {
@@ -172,12 +163,7 @@ app.post('/api/session/:id/complete', async (req, res) => {
   }
 });
 
-/* ---------------------------
-   Feedback endpoints
-   --------------------------- */
-
 // Student posts feedback for a session
-// body: { sessionId, rating (1-5), comment, learnerUserId }
 app.post('/api/feedback', async (req, res) => {
   try {
     const { sessionId, rating, comment, learnerUserId } = req.body;
@@ -199,10 +185,9 @@ app.post('/api/feedback', async (req, res) => {
 
     const fb = await Feedback.create({ sessionId, rating, comment });
 
-    // Recalculate tutor rating (average of all feedbacks for that tutor)
+    // Recalculate tutor rating
     const tutor = await Tutor.findByPk(session.tutorId);
     if(tutor){
-      // get all feedbacks for sessions belonging to this tutor
       const tutorSessions = await Session.findAll({ where: { tutorId: tutor.id }});
       const sessionIds = tutorSessions.map(s => s.id);
       const fbs = await Feedback.findAll({ where: { sessionId: sessionIds }});
@@ -215,7 +200,7 @@ app.post('/api/feedback', async (req, res) => {
       await tutor.save();
     }
 
-    // notify tutor and admin
+    // notify tutor
     const t = await Tutor.findByPk(session.tutorId);
     if(t) await Notification.create({ userId: t.userId, message: `New feedback for session ${sessionId}`});
 
@@ -252,18 +237,13 @@ app.get('/api/feedback/tutor/:tutorId', async (req, res) => {
   }
 });
 
-/* ---------------------------
-   Existing sessions endpoints (unchanged)
-   --------------------------- */
-
-// Get sessions for a learner by userId (returns sessions joined with tutor user name)
+// Get sessions for a learner
 app.get('/api/sessions/learner/:userId', async (req,res)=>{
   try{
     const userId = req.params.userId;
     const learner = await Learner.findOne({ where: { userId }});
     if(!learner) return res.json([]);
     const sessions = await Session.findAll({ where: { learnerId: learner.id } });
-    // attach tutor name and feedback flag
     const enriched = await Promise.all(sessions.map(async s=>{
       const t = await Tutor.findByPk(s.tutorId);
       const tutorUser = t ? await User.findByPk(t.userId) : null;
@@ -274,18 +254,16 @@ app.get('/api/sessions/learner/:userId', async (req,res)=>{
   }catch(e){ console.error(e); res.status(500).json({ error:'Server error' }); }
 });
 
-// Get sessions for a tutor by userId
+// Get sessions for a tutor
 app.get('/api/sessions/tutor/:userId', async (req,res)=>{
   try{
     const userId = req.params.userId;
     const tutor = await Tutor.findOne({ where: { userId }});
     if(!tutor) return res.json([]);
     const sessions = await Session.findAll({ where: { tutorId: tutor.id } });
-    // attach learner name
     const enriched = await Promise.all(sessions.map(async s=>{
       const learner = await Learner.findByPk(s.learnerId);
       const learnerUser = learner ? await User.findByPk(learner.userId) : null;
-      // attach feedback if present
       const feedback = await Feedback.findOne({ where: { sessionId: s.id }});
       return { session: s, learnerName: learnerUser ? learnerUser.name : 'Learner', feedback };
     }));
@@ -293,7 +271,7 @@ app.get('/api/sessions/tutor/:userId', async (req,res)=>{
   }catch(e){ console.error(e); res.status(500).json({ error:'Server error' }); }
 });
 
-// Update tutor profile (subjects, availability) by userId
+// Update tutor profile
 app.post('/api/tutor/update-profile', async (req,res)=>{
   try{
     const { userId, subjects, availability } = req.body;
@@ -306,7 +284,7 @@ app.post('/api/tutor/update-profile', async (req,res)=>{
   }catch(e){ console.error(e); res.status(500).json({ error:'Server error' }); }
 });
 
-// List notifications for user
+// List notifications
 app.get('/api/notifications/:userId', async (req,res)=>{
   try{
     const userId = req.params.userId;
@@ -315,11 +293,7 @@ app.get('/api/notifications/:userId', async (req,res)=>{
   }catch(e){ console.error(e); res.status(500).json({ error:'Server error' }); }
 });
 
-/* --------------------------
-   ADMIN: Level 1 endpoints
-   -------------------------- */
-
-// Get all users (with role)
+// Admin: Get all users
 app.get('/api/admin/users', async (req, res) => {
   try {
     const users = await User.findAll({ attributes: ['id','name','email','role','createdAt'] });
@@ -330,27 +304,23 @@ app.get('/api/admin/users', async (req, res) => {
   }
 });
 
-// Delete a user by id (also delete associated Tutor/Learner/notifications/sessions)
+// Admin: Delete user
 app.delete('/api/admin/user/:id', async (req, res) => {
   const id = req.params.id;
   try {
     const user = await User.findByPk(id);
     if(!user) return res.status(404).json({ error: 'User not found' });
 
-    // If user is a Tutor: delete tutor record and sessions where tutorId
     const tutor = await Tutor.findOne({ where: { userId: user.id }});
     if(tutor){
-      // delete sessions for this tutor
       const tutorSessions = await Session.findAll({ where: { tutorId: tutor.id }});
       for(const s of tutorSessions){
-        // delete feedback for session (if any)
         await Feedback.destroy({ where: { sessionId: s.id }});
         await s.destroy();
       }
       await tutor.destroy();
     }
 
-    // If user is a Learner: delete learner record and sessions where learnerId
     const learner = await Learner.findOne({ where: { userId: user.id }});
     if(learner){
       const learnerSessions = await Session.findAll({ where: { learnerId: learner.id }});
@@ -361,12 +331,8 @@ app.delete('/api/admin/user/:id', async (req, res) => {
       await learner.destroy();
     }
 
-    // delete notifications
     await Notification.destroy({ where: { userId: user.id }});
-
-    // finally delete user
     await user.destroy();
-
     res.json({ success: true });
   } catch (e) {
     console.error(e);
@@ -374,7 +340,7 @@ app.delete('/api/admin/user/:id', async (req, res) => {
   }
 });
 
-// Get all sessions (enriched with tutor & learner names)
+// Admin: Get all sessions
 app.get('/api/admin/sessions', async (req, res) => {
   try {
     const sessions = await Session.findAll();
@@ -398,7 +364,7 @@ app.get('/api/admin/sessions', async (req, res) => {
   }
 });
 
-/* NEW: Admin feedback listing */
+// Admin: Get all feedbacks
 app.get('/api/admin/feedbacks', async (req, res) => {
   try {
     const feedbacks = await Feedback.findAll({ order: [['createdAt','DESC']] });
@@ -422,18 +388,13 @@ app.get('/api/admin/feedbacks', async (req, res) => {
   }
 });
 
-/* --------------------------
-   End ADMIN endpoints
-   -------------------------- */
-
-// init and start
-// CHANGED: Use environment port and bind to 0.0.0.0 for Railway
+// START SERVER
 const PORT = process.env.PORT || 8080;
 (async () => {
   try {
     await sequelize.sync();
     app.listen(PORT, '0.0.0.0', () => console.log(`Server started on ${PORT}`));
   } catch (error) {
-    console.error("Unable to start server or sync DB:", error);
+    console.error("Unable to start server:", error);
   }
 })();
