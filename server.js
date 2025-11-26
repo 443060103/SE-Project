@@ -414,8 +414,13 @@ app.get('/api/admin/feedbacks', async (req, res) => {
    -------------------------- */
 
 // init and start
-const PORT = process.env.PORT || 3000;
-(async ()=>{
-  await sequelize.sync();
-  app.listen(PORT, ()=> console.log('Server started on', PORT));
+// CHANGED: Use environment port and bind to 0.0.0.0 for Railway
+const PORT = process.env.PORT || 8080;
+(async () => {
+  try {
+    await sequelize.sync();
+    app.listen(PORT, '0.0.0.0', () => console.log(`Server started on ${PORT}`));
+  } catch (error) {
+    console.error("Unable to start server or sync DB:", error);
+  }
 })();
